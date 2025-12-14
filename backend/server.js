@@ -13,5 +13,3 @@ app.listen(3000, () => {
   connectDB();
   console.log("server is listening on port 3000");
 });
-
-// mongodb+srv://zlatimir_rk:qQXDE1SMysg2x4ll@cluster0.jmtwni8.mongodb.net/
