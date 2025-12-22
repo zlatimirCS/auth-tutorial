@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export const mailtrapClient = new MailtrapClient({
-  token: "1d545f61d66376f683fc7e26002db32e", // You can create your API key here https://mailtrap.io/api-tokens
+  token: process.env.MAILTRAP_API_KEY, // You can create your API key here https://mailtrap.io/api-tokens
 });
 
 export const sender = {

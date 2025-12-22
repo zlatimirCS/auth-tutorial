@@ -27,7 +27,7 @@ export const signup = async (req, res) => {
       email,
       password: newPassword,
       verificationToken,
-      verficationTokenExpiresAt: Date.now() + 24 * 60 * 60 * 1000,
+      verificationTokenExpiresAt: Date.now() + 24 * 60 * 60 * 1000,
     });
     await newUser.save();
 
@@ -45,6 +45,47 @@ export const signup = async (req, res) => {
     });
   } catch (error) {
     console.error("Error in signup:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const verifyEmail = async (req, res) => {
+  const { verificationToken } = req.body;
+  try {
+    if (!verificationToken) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Please fill all the fields" });
+    }
+
+    const userFound = await User.findOne({ verificationToken });
+    const { verificationTokenExpiresAt } = userFound;
+
+    if (!userFound) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid verification token" });
+    }
+
+    if (verificationTokenExpiresAt < Date.now()) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Verification token expired" });
+    }
+
+    userFound.isVerified = true;
+    userFound.verificationToken = undefined;
+    userFound.verificationTokenExpiresAt = undefined;
+
+    await userFound.save();
+
+    return res
+      .status(200)
+      .json({ success: true, message: "Email verified successfully" });
+  } catch (error) {
+    console.error("Error in verifyEmail:", error);
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
