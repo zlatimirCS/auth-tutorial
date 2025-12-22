@@ -2,6 +2,7 @@ import User from "../models/user.model.js";
 import bcryptjs from "bcryptjs";
 import { generateVerificationToken } from "../utils/generateVerificationToken.js";
 import { generateTokenAndSetCookie } from "../utils/generateTokenAndSetCookie.js";
+import { sendVerificationEmail } from "../mailtrap/email.js";
 
 export const signup = async (req, res) => {
   const { name, email, password } = req.body;
@@ -32,6 +33,8 @@ export const signup = async (req, res) => {
 
     // jwt
     generateTokenAndSetCookie(res, newUser._id);
+
+    await sendVerificationEmail(newUser.email, verificationToken);
     return res.status(201).json({
       success: true,
       message: "User created",
