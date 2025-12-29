@@ -2,18 +2,35 @@ import User from "../models/user.model.js";
 import bcryptjs from "bcryptjs";
 import { generateVerificationToken } from "../utils/generateVerificationToken.js";
 import { generateTokenAndSetCookie } from "../utils/generateTokenAndSetCookie.js";
-import { sendVerificationEmail, sendWelcomeEmail } from "../mailtrap/email.js";
+import {
+  sendVerificationEmail,
+  sendWelcomeEmail,
+  sendResetSuccessEmail,
+  sendPasswordResetEmail,
+} from "../mailtrap/email.js";
+import { getLanguage, translate } from "../utils/translations.js";
+import crypto from "crypto";
 
 export const login = async (req, res) => {
+  // Get language from Accept-Language header
+  const lang = getLanguage(req.headers["accept-language"]);
+  if (!req.body) {
+    return res.status(400).json({
+      success: false,
+      message: translate(lang, "login", "fill_all_fields"),
+    });
+  }
   const { email, password } = req.body;
 
   try {
     if (!email || !password) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Please fill all the fields" });
+      return res.status(400).json({
+        success: false,
+        message: translate(lang, "login", "fill_all_fields"),
+      });
     }
-    const userFound = User.findOne({ email });
+    const userFound = await User.findOne({ email });
+    console.log("userFound:", userFound);
     if (!userFound) {
       return res
         .status(400)
@@ -27,6 +44,13 @@ export const login = async (req, res) => {
       return res
         .status(400)
         .json({ success: false, message: "Invalid credentials" });
+    }
+    const isVerified = userFound.isVerified;
+    if (!isVerified) {
+      return res.status(400).json({
+        success: false,
+        message: translate(lang, "login", "verify_email_first"),
+      });
     }
 
     generateTokenAndSetCookie(res, userFound._id);
@@ -143,18 +167,113 @@ export const verifyEmail = async (req, res) => {
 
 export const logout = async (req, res) => {
   try {
+    // Get language from Accept-Language header
+    const lang = getLanguage(req.headers["accept-language"]);
+
     res.clearCookie("token", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
     });
-    return res
-      .status(200)
-      .json({ success: true, message: "Logged out successfully" });
+    return res.status(200).json({
+      success: true,
+      message: translate(lang, "logout", "success"),
+    });
   } catch (error) {
+    const lang = getLanguage(req.headers["accept-language"]);
     console.error("Error in logout:", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Internal server error" });
+    return res.status(500).json({
+      success: false,
+      message: translate(lang, "logout", "error"),
+    });
+  }
+};
+
+export const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+  try {
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res
+        .status(400)
+        .json({ success: false, message: "User not found" });
+    }
+    const resetToken = crypto.randomBytes(20).toString("hex");
+    const resetTokenExpiresAt = Date.now() + 1 * 60 * 60 * 1000; // 1 hour
+
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordTokenExpiresAt = resetTokenExpiresAt;
+
+    await user.save();
+    console.log("user email", user.email);
+
+    await sendPasswordResetEmail(
+      user.email,
+      `http://localhost:3000/reset-password/${resetToken}`
+    );
+    res.status(200).json({
+      success: true,
+      message: "Password reset link sent to your email",
+    });
+  } catch (error) {
+    console.error("something went wrong");
+    res.status(400).json({
+      success: false,
+      message: error?.message || "something went wrong",
+    });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordTokenExpiresAt: { $gt: Date.now() },
+    });
+    if (!user) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid or expired reset token" });
+    }
+    // update password
+    const hashedPassword = await bcryptjs.hash(password, 10);
+
+    user.password = hashedPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordTokenExpiresAt = undefined;
+    await user.save();
+
+    await sendResetSuccessEmail(user?.email);
+    res
+      .status(200)
+      .json({ success: true, message: "Password reset successfuly" });
+  } catch (error) {
+    console.error("something went wrong");
+    res.status(400).json({ success: false, message: "reset password failed" });
+  }
+};
+
+export const checkAuth = async (req, res) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) {
+      return res
+        .status(400)
+        .json({ success: false, message: "user not found" });
+    }
+
+    res.status(200).json({
+      success: true,
+      user: {
+        ...user?._doc,
+        password: undefined,
+      },
+    });
+  } catch (error) {
+    console.error("something went wrong");
   }
 };
