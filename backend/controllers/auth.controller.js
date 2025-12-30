@@ -210,7 +210,7 @@ export const forgotPassword = async (req, res) => {
 
     await sendPasswordResetEmail(
       user.email,
-      `http://localhost:3000/reset-password/${resetToken}`
+      `http://localhost:5137/reset-password/${resetToken}`
     );
     res.status(200).json({
       success: true,
