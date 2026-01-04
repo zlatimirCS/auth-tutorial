@@ -549,3 +549,143 @@ export const getPersons = async (req, res) => {
       .json({ success: false, message: "Internal server error" });
   }
 };
+
+export const getPersonsCopy = async (req, res) => {
+  try {
+    const {
+      favoriteFruit,
+      searchTerm,
+      tags,
+      page = 1,
+      limit = 2,
+      sortBy = "registered",
+      order = "asc",
+    } = req.query;
+
+    // Build initial match stage
+    const matchStage = {};
+    if (favoriteFruit) {
+      matchStage.favoriteFruit = favoriteFruit;
+    }
+
+    // Add tags filter - match documents with ANY of the specified tags
+    if (tags) {
+      const tagsArray = Array.isArray(tags) ? tags : tags.split(",");
+      matchStage.tags = { $in: tagsArray };
+    }
+
+    // Add search term for name and company.email
+    if (searchTerm) {
+      matchStage.$or = [
+        { name: { $regex: searchTerm, $options: "i" } }, // Case-insensitive search in name
+        { "company.email": { $regex: searchTerm, $options: "i" } }, // Case-insensitive search in company email
+      ];
+    }
+
+    const sortOrder = order === "asc" ? 1 : -1;
+    const skip = (page - 1) * limit;
+    const currentPage = parseInt(page);
+
+    // Single query with $facet - runs multiple pipelines in parallel
+    const pipeline = [
+      { $match: Object.keys(matchStage).length ? matchStage : {} },
+      {
+        $facet: {
+          // Get total count without pagination
+          metadata: [
+            { $count: "total" },
+            {
+              $addFields: {
+                page: currentPage,
+                limit: parseInt(limit),
+              },
+            },
+          ],
+          // Get paginated and sorted persons
+          data: [
+            { $sort: { [sortBy]: sortOrder } },
+            { $skip: parseInt(skip) },
+            { $limit: parseInt(limit) },
+            {
+              $project: {
+                index: 1,
+                name: 1,
+                age: 1,
+                gender: 1,
+                eyeColor: 1,
+                favoriteFruit: 1,
+                isActive: 1,
+                registeredDate: "$registered",
+                companyDetails: {
+                  jobTitle: "$company.title",
+                  companyEmail: "$company.email",
+                  phone: "$company.phone",
+                  location: "$company.location",
+                },
+                tags: 1,
+                createdAt: 1,
+                updatedAt: 1,
+              },
+            },
+          ],
+          // Age distribution using $bucket
+          ageDistribution: [
+            {
+              $bucket: {
+                groupBy: "$age",
+                boundaries: [0, 20, 30, 40, 50, 60, 100],
+                default: "unknown",
+                output: {
+                  count: { $sum: 1 },
+                  names: {
+                    $push: {
+                      name: "$name",
+                      age: "$age",
+                    },
+                  },
+                },
+              },
+            },
+          ],
+          // Gender breakdown
+          genderStats: [
+            {
+              $group: {
+                _id: "$gender",
+                count: { $sum: 1 },
+              },
+            },
+            { $sort: { count: -1 } },
+          ],
+        },
+      },
+    ];
+
+    const result = await Person.aggregate(pipeline);
+
+    // Extract data from facet results
+    const { data, metadata, ageDistribution, genderStats } = result[0];
+    const totalCount = metadata[0]?.total || 0;
+
+    res.status(200).json({
+      success: true,
+      persons: data,
+      pagination: {
+        total: totalCount,
+        page: currentPage,
+        limit: parseInt(limit),
+        pages: Math.ceil(totalCount / parseInt(limit)),
+      },
+      stats: {
+        ageDistribution,
+        genderStats,
+      },
+      searchApplied: !!searchTerm,
+    });
+  } catch (error) {
+    console.error("Error in getPersonsCopy:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
