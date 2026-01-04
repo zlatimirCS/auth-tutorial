@@ -1,12 +1,18 @@
+import React, { useEffect } from "react";
 import { motion } from "framer-motion";
 import { useAuthStore } from "../store/authStore";
 import { formatDate } from "../utils/date";
 
 const DashboardPage = () => {
-  const { user, logout } = useAuthStore();
+  const { user, logout, persons } = useAuthStore();
 
   const handleLogout = () => {
     logout();
+  };
+
+  const handleGetPersons = async () => {
+    // e.preventDefault();
+    await persons();
   };
   return (
     <motion.div
@@ -19,6 +25,7 @@ const DashboardPage = () => {
       <h2 className="text-3xl font-bold mb-6 text-center bg-gradient-to-r from-green-400 to-emerald-600 text-transparent bg-clip-text">
         Dashboard
       </h2>
+      <button onClick={handleGetPersons}>get persons</button>
 
       <div className="space-y-6">
         <motion.div
